@@ -102,8 +102,13 @@ export function getHttpFetch(): Promise<typeof globalThis.fetch> {
  * these generic network error shapes", which this helper centralizes.
  */
 export function isFetchNetworkError(err: unknown): boolean {
+  if (err instanceof Error && err.name === "AbortError") return false
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : ""
+  // tauri-plugin-http serializes reqwest errors as bare strings over IPC.
+  // Check these explicitly; permission/configuration errors are strings too.
+  if (/^error sending request(?: for url \(.+\))?(?::.*)?$/i.test(message)) return true
+  if (/^(error decoding response body|request or response body error)(?::.*)?$/i.test(message)) return true
   if (!(err instanceof Error)) return false
-  if (err.name === "AbortError") return false
   // Chromium / Edge WebView2
   if (err.name === "TypeError") return true
   // WebKit (macOS / Linux GTK)

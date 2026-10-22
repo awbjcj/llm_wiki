@@ -102,6 +102,16 @@ describe("getHttpFetch — Node fallback", () => {
 })
 
 describe("isFetchNetworkError", () => {
+  it("recognizes reqwest failures serialized as strings by Tauri IPC", () => {
+    const message = "error sending request for url (https://gateway.example/v1/chat/completions)"
+    expect(isFetchNetworkError(message)).toBe(true)
+    expect(isFetchNetworkError(new Error(message))).toBe(true)
+    expect(isFetchNetworkError("error decoding response body")).toBe(true)
+    expect(isFetchNetworkError("Request cancelled")).toBe(false)
+    expect(isFetchNetworkError("HTTP 401: Unauthorized")).toBe(false)
+    expect(isFetchNetworkError("url not allowed on the configured scope")).toBe(false)
+  })
+
   it("recognizes WebKit 'Load failed'", () => {
     const err = new Error("Load failed")
     expect(isFetchNetworkError(err)).toBe(true)

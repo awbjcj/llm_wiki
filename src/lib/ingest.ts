@@ -3291,7 +3291,7 @@ async function analyzeLongSourceInChunks(
     })
 
     let raw = ""
-    let hadError = false
+    let analysisError: Error | undefined
     let analysisTruncated = false
     await streamChat(
       llmConfig,
@@ -3311,7 +3311,7 @@ async function analyzeLongSourceInChunks(
         onToken: (token) => { raw += token },
         onDone: (completion) => { analysisTruncated = completion?.truncated === true },
         onError: (err) => {
-          hadError = true
+          analysisError = err
           activity.updateItem(activityId, { status: "error", detail: `Chunk analysis failed: ${err.message}` })
         },
       },
@@ -3320,7 +3320,9 @@ async function analyzeLongSourceInChunks(
     )
 
     throwIfIngestAborted(signal, activityId)
-    if (hadError) throw new Error("Chunk analysis stream failed")
+    if (analysisError) {
+      throw new Error(`Chunk analysis stream failed (${chunk.index}/${chunk.total}): ${analysisError.message}`)
+    }
     if (analysisTruncated) {
       const message =
         `Chunk ${chunk.index}/${chunk.total} analysis was truncated after reaching the ` +

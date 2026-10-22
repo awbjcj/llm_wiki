@@ -695,7 +695,7 @@ describe("autoIngest source summary paths", () => {
 
     await expect(
       autoIngest(tmp.path, longSourcePath, llmConfig, undefined, "project-a"),
-    ).rejects.toThrow("Chunk analysis stream failed")
+    ).rejects.toThrow("Chunk analysis stream failed (2/3): chunk 2 failed once")
 
     const progressDir = path.join(tmp.path, ".llm-wiki", "ingest-progress")
     expect((await fs.readdir(progressDir)).filter((name) => name.endsWith(".json"))).toHaveLength(1)

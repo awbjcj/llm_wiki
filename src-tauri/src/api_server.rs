@@ -1886,12 +1886,21 @@ impl Drop for PageEmbedSlot {
 }
 
 fn try_acquire_page_embed_slot() -> Option<PageEmbedSlot> {
-    IN_FLIGHT_PAGE_EMBEDS
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-            (current < MAX_IN_FLIGHT_PAGE_EMBEDS).then_some(current + 1)
-        })
-        .ok()
-        .map(|_| PageEmbedSlot)
+    // Keep Rust 1.88 support: try_update requires Rust 1.95, while
+    // fetch_update is deprecated on newer toolchains.
+    let mut current = IN_FLIGHT_PAGE_EMBEDS.load(Ordering::Relaxed);
+    while current < MAX_IN_FLIGHT_PAGE_EMBEDS {
+        match IN_FLIGHT_PAGE_EMBEDS.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return Some(PageEmbedSlot),
+            Err(actual) => current = actual,
+        }
+    }
+    None
 }
 
 fn handle_embed_page(app: &AppHandle, project_id: &str, body: &str) -> ApiResponse {
@@ -2948,6 +2957,22 @@ fn load_source_watch_config(
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn page_embed_slots_enforce_limit_and_release_on_drop() {
+        let mut slots: Vec<_> = (0..MAX_IN_FLIGHT_PAGE_EMBEDS)
+            .map(|_| try_acquire_page_embed_slot().expect("slot below limit"))
+            .collect();
+        assert!(try_acquire_page_embed_slot().is_none());
+
+        drop(slots.pop());
+        let replacement = try_acquire_page_embed_slot().expect("released slot is reusable");
+        assert!(try_acquire_page_embed_slot().is_none());
+
+        drop(replacement);
+        drop(slots);
+        assert_eq!(IN_FLIGHT_PAGE_EMBEDS.load(Ordering::Relaxed), 0);
+    }
 
     fn test_project_dir() -> PathBuf {
         // Per-process atomic sequence appended to the timestamp so two

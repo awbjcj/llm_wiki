@@ -102,6 +102,98 @@ function openAiSseToken(content: string): string {
   return `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}`
 }
 
+describe("streamChat — native connection recovery", () => {
+  const networkError = "error sending request for url (https://gateway.example/v1/chat/completions)"
+  beforeEach(() => {
+    mockHttpFetch.mockReset()
+    vi.useFakeTimers()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it("retries a native connection failure without failing the ingest callbacks", async () => {
+    mockHttpFetch.mockRejectedValueOnce(networkError).mockResolvedValueOnce(
+      new Response(`${openAiSseToken("Recovered analysis")}\n\ndata: [DONE]\n\n`),
+    )
+    const callbacks = { onToken: vi.fn(), onDone: vi.fn(), onError: vi.fn() }
+    const promise = streamChat(customStreamingCfg, [{ role: "user", content: "analyze" }], callbacks)
+    await vi.advanceTimersByTimeAsync(1000)
+    await promise
+    expect(mockHttpFetch).toHaveBeenCalledTimes(2)
+    expect(callbacks.onToken).toHaveBeenCalledWith("Recovered analysis")
+    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
+    expect(callbacks.onError).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("stops after three attempts and retains the native error", async () => {
+    mockHttpFetch.mockRejectedValue(networkError)
+    const callbacks = { onToken: vi.fn(), onDone: vi.fn(), onError: vi.fn() }
+    const promise = streamChat(customStreamingCfg, [], callbacks)
+    await vi.advanceTimersByTimeAsync(3000)
+    await promise
+    expect(mockHttpFetch).toHaveBeenCalledTimes(3)
+    expect(callbacks.onError).toHaveBeenCalledTimes(1)
+    expect(callbacks.onError.mock.calls[0][0].message).toContain(networkError)
+    expect(callbacks.onError.mock.calls[0][0].message).toContain("proxy")
+    expect(callbacks.onDone).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("cancels promptly during retry backoff without sending another request", async () => {
+    mockHttpFetch.mockRejectedValue(networkError)
+    const controller = new AbortController()
+    const callbacks = { onToken: vi.fn(), onDone: vi.fn(), onError: vi.fn() }
+    const promise = streamChat(customStreamingCfg, [], callbacks, controller.signal)
+    await vi.advanceTimersByTimeAsync(0)
+    controller.abort()
+    await promise
+    expect(mockHttpFetch).toHaveBeenCalledTimes(1)
+    expect(callbacks.onError).not.toHaveBeenCalled()
+    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("does not send a request when already cancelled", async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const callbacks = { onToken: vi.fn(), onDone: vi.fn(), onError: vi.fn() }
+    await streamChat(customStreamingCfg, [], callbacks, controller.signal)
+    expect(mockHttpFetch).not.toHaveBeenCalled()
+    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
+    expect(callbacks.onError).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("does not retry HTTP authentication errors", async () => {
+    mockHttpFetch.mockResolvedValue(new Response("Invalid key", { status: 401 }))
+    const callbacks = { onToken: vi.fn(), onDone: vi.fn(), onError: vi.fn() }
+    await streamChat(customStreamingCfg, [], callbacks)
+    expect(mockHttpFetch).toHaveBeenCalledTimes(1)
+    expect(callbacks.onError.mock.calls[0][0].message).toContain("HTTP 401")
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("does not replay a response after partial wiki content has streamed", async () => {
+    let readCount = 0
+    mockHttpFetch.mockResolvedValue(new Response(new ReadableStream({
+      pull(controller) {
+        if (readCount++ === 0) {
+          controller.enqueue(new TextEncoder().encode(`${openAiSseToken("---FILE: wiki/test.md---")}\n\n`))
+        } else {
+          controller.error("error decoding response body")
+        }
+      },
+    })))
+    const callbacks = { onToken: vi.fn(), onDone: vi.fn(), onError: vi.fn() }
+    await streamChat(customStreamingCfg, [], callbacks)
+    expect(mockHttpFetch).toHaveBeenCalledTimes(1)
+    expect(callbacks.onToken).toHaveBeenCalledWith("---FILE: wiki/test.md---")
+    expect(callbacks.onError.mock.calls[0][0].message).toContain("Connection lost during streaming")
+    expect(callbacks.onDone).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
 describe("streamChat — buffered streaming responses", () => {
   beforeEach(() => mockHttpFetch.mockReset())
 

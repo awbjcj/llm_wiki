@@ -203,6 +203,39 @@ function shouldRetryWithoutTemperature(
   )
 }
 
+function waitForConnectionRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cancel = () => {
+      clearTimeout(timer)
+      signal.removeEventListener("abort", cancel)
+      reject(new DOMException("Request cancelled", "AbortError"))
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancel)
+      resolve()
+    }, delayMs)
+    signal.addEventListener("abort", cancel, { once: true })
+    if (signal.aborted) cancel()
+  })
+}
+
+async function fetchWithConnectionRetry(
+  request: () => Promise<Response>,
+  signal: AbortSignal,
+): Promise<Response> {
+  // Retry only before a response is received. Replaying a stream after it
+  // emitted FILE blocks could duplicate or overwrite generated wiki content.
+  for (let attempt = 0; ; attempt++) {
+    if (signal.aborted) throw new DOMException("Request cancelled", "AbortError")
+    try {
+      return await request()
+    } catch (err) {
+      if (signal.aborted || !isFetchNetworkError(err) || attempt >= 2) throw err
+      await waitForConnectionRetry(1000 * 2 ** attempt, signal)
+    }
+  }
+}
+
 export async function streamChat(
   config: LlmConfig,
   messages: import("./llm-providers").ChatMessage[],
@@ -253,281 +286,275 @@ export async function streamChat(
   // backstop actually fired so we can tell the two apart in the error.
   const timeoutMinutes = Math.max(1, Math.min(1440, config.requestTimeoutMinutes ?? 30))
   const timeoutMs = timeoutMinutes * 60 * 1000
-  let combinedSignal = signal
-  let timeoutController: AbortController | undefined
+  const timeoutController = new AbortController()
+  const combinedSignal = timeoutController.signal
   let timeoutFired = false
+  const timeoutId = setTimeout(() => {
+    timeoutFired = true
+    timeoutController.abort()
+  }, timeoutMs)
+  const cancel = () => timeoutController.abort()
+  signal?.addEventListener("abort", cancel, { once: true })
+  if (signal?.aborted) cancel()
 
-  if (typeof AbortSignal.timeout === "function") {
-    timeoutController = new AbortController()
-    const timeoutId = setTimeout(() => {
-      timeoutFired = true
-      timeoutController?.abort()
-    }, timeoutMs)
-
-    if (signal) {
-      signal.addEventListener("abort", () => {
-        clearTimeout(timeoutId)
-        timeoutController?.abort()
-      })
-    }
-    combinedSignal = timeoutController.signal
-  }
-
-  let response: Response
   try {
-    const body = providerConfig.buildBody(messages, requestOverrides)
-    const httpFetch = await getHttpFetch()
-    response = await httpFetch(providerConfig.url, {
-      method: "POST",
-      headers: providerConfig.headers,
-      body: JSON.stringify(body),
-      signal: combinedSignal,
-    })
-  } catch (err) {
-    if (signal?.aborted) {
-      onDone()
-      return
-    }
-    if ((err instanceof Error && err.name === "AbortError") || isRequestCancelledError(err)) {
-      // Backstop timeout aborted the request (we tracked this via
-      // timeoutFired); treat it as a real timeout rather than a cancel.
-      if (timeoutFired) {
-        onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
+    let response: Response
+    try {
+      const body = providerConfig.buildBody(messages, requestOverrides)
+      const serializedBody = JSON.stringify(body)
+      const httpFetch = await getHttpFetch()
+      response = await fetchWithConnectionRetry(() => httpFetch(providerConfig.url, {
+        method: "POST",
+        headers: providerConfig.headers,
+        body: serializedBody,
+        signal: combinedSignal,
+      }), combinedSignal)
+    } catch (err) {
+      if (signal?.aborted) {
+        onDone()
         return
       }
-      onDone()
-      return
-    }
-    if (isFetchNetworkError(err)) {
-      if (timeoutFired) {
-        onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
-        return
-      }
-      // Fast fetch failure: DNS, TLS handshake, connection refused,
-      // wrong endpoint, CORS preflight rejection, etc. All webviews
-      // collapse this class of failure into an opaque error — point
-      // users at the likely cause (endpoint / key / connectivity).
-      onError(new Error(`Network error reaching ${providerConfig.url}. Check endpoint URL, API key, and connectivity.`))
-      return
-    }
-    onError(err instanceof Error ? err : new Error(String(err)))
-    return
-  }
-
-  if (!response.ok) {
-    let errorDetail = `HTTP ${response.status}: ${response.statusText}`
-    try {
-      const body = await response.text()
-      if (body) errorDetail += ` — ${body}`
-    } catch {
-      // ignore body read failure
-    }
-    if (shouldRetryWithoutTemperature(config, response.status, errorDetail, requestOverrides)) {
-      const { temperature: _temperature, ...retryOverrides } = requestOverrides ?? {}
-      return streamChat(config, messages, callbacks, signal, retryOverrides)
-    }
-    if (
-      response.status === 404 &&
-      (config.provider === "azure" ||
-        (config.provider === "custom" && isAzureOpenAiEndpoint(config.customEndpoint)))
-    ) {
-      onError(
-        new Error(
-          `${errorDetail} — Azure 404 usually means the deployment name is wrong. ` +
-            `Set Model to your Azure deployment name (not the model SKU), ` +
-            `and Endpoint to https://<resource>.openai.azure.com ` +
-            `or .../openai/deployments/<deployment-name>.`,
-        ),
-      )
-      return
-    }
-    onError(new Error(errorDetail))
-    return
-  }
-
-  if (!providerConfig.streaming) {
-    try {
-      const payload: unknown = await response.json()
-      const content = providerConfig.parseResponse(payload)
-      const finishReason = responseFinishReason(payload)
-      if (!content) {
-        if (isTokenLimitFinishReason(finishReason)) {
-          onDone({ finishReason, truncated: true })
+      if ((err instanceof Error && err.name === "AbortError") || isRequestCancelledError(err)) {
+        // Backstop timeout aborted the request (we tracked this via
+        // timeoutFired); treat it as a real timeout rather than a cancel.
+        if (timeoutFired) {
+          onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
           return
         }
-        onError(new Error("Model returned an empty non-streaming response"))
-        return
-      }
-      onToken(content)
-      onDone({ finishReason, truncated: isTokenLimitFinishReason(finishReason) })
-    } catch (err) {
-      if (timeoutFired) {
-        onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
-        return
-      }
-      if (
-        signal?.aborted ||
-        (err instanceof Error && err.name === "AbortError") ||
-        isRequestCancelledError(err)
-      ) {
         onDone()
         return
       }
       if (isFetchNetworkError(err)) {
-        onError(new Error("Connection lost while reading the complete response. Try again."))
+        if (timeoutFired) {
+          onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
+          return
+        }
+        const detail = err instanceof Error ? err.message : String(err)
+        onError(new Error(`Network error reaching ${providerConfig.url}. Check endpoint URL, proxy, TLS certificates, and connectivity. ${detail}`))
         return
       }
       onError(err instanceof Error ? err : new Error(String(err)))
+      return
     }
-    return
-  }
 
-  if (!response.body) {
-    onError(new Error("Response body is null"))
-    return
-  }
-
-  const reader = response.body.getReader()
-  // TextDecoder keeps partial multi-byte state, so it must be scoped to this
-  // response rather than shared across concurrent research requests.
-  const decoder = new TextDecoder()
-  let lineBuffer = ""
-
-  // Diagnostic counters. Some OpenAI-compatible endpoints stream
-  // chain-of-thought through a `reasoning_content` (DeepSeek-R1,
-  // Kimi K2.x) or `reasoning` (Qwen-flavored deployments) field
-  // and only put the actual answer in `delta.content` after
-  // thinking ends. Misbehaving endpoints sometimes emit kilobytes
-  // of reasoning and end the stream with no content at all,
-  // leaving the user with a silent empty analysis. We track the
-  // two channels separately so the stream-end path can tell the
-  // difference between "model said nothing" and "model thought
-  // out loud but never produced an answer". See reasoning-
-  // detector.ts.
-  let contentCharsEmitted = 0
-  let reasoningCharsObserved = 0
-  let finishReason: string | undefined
-  const recordToken = (text: string) => {
-    contentCharsEmitted += text.length
-    onToken(text)
-  }
-  const recordReasoning = (line: string) => {
-    const reasoningParts = extractReasoningTextFromLine(line)
-    for (const part of reasoningParts) {
-      callbacks.onReasoningToken?.(part)
+    if (!response.ok) {
+      let errorDetail = `HTTP ${response.status}: ${response.statusText}`
+      try {
+        const body = await response.text()
+        if (body) errorDetail += ` — ${body}`
+      } catch {
+        // ignore body read failure
+      }
+      if (shouldRetryWithoutTemperature(config, response.status, errorDetail, requestOverrides)) {
+        const { temperature: _temperature, ...retryOverrides } = requestOverrides ?? {}
+        return streamChat(config, messages, callbacks, signal, retryOverrides)
+      }
+      if (
+        response.status === 404 &&
+        (config.provider === "azure" ||
+          (config.provider === "custom" && isAzureOpenAiEndpoint(config.customEndpoint)))
+      ) {
+        onError(
+          new Error(
+            `${errorDetail} — Azure 404 usually means the deployment name is wrong. ` +
+              `Set Model to your Azure deployment name (not the model SKU), ` +
+              `and Endpoint to https://<resource>.openai.azure.com ` +
+              `or .../openai/deployments/<deployment-name>.`,
+          ),
+        )
+        return
+      }
+      onError(new Error(errorDetail))
+      return
     }
-  }
-  const processRecord = (line: string): Error | null => {
-    const trimmed = line.trim()
-    if (!trimmed) return null
 
-    reasoningCharsObserved += countReasoningCharsInLine(trimmed)
-    finishReason = streamFinishReason(trimmed) ?? finishReason
-    recordReasoning(trimmed)
-    const token = providerConfig.parseStream(trimmed)
-    if (token !== null) {
-      recordToken(token)
-      return null
+    if (!providerConfig.streaming) {
+      try {
+        const payload: unknown = await response.json()
+        const content = providerConfig.parseResponse(payload)
+        const finishReason = responseFinishReason(payload)
+        if (!content) {
+          if (isTokenLimitFinishReason(finishReason)) {
+            onDone({ finishReason, truncated: true })
+            return
+          }
+          onError(new Error("Model returned an empty non-streaming response"))
+          return
+        }
+        onToken(content)
+        onDone({ finishReason, truncated: isTokenLimitFinishReason(finishReason) })
+      } catch (err) {
+        if (timeoutFired) {
+          onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
+          return
+        }
+        if (
+          signal?.aborted ||
+          (err instanceof Error && err.name === "AbortError") ||
+          isRequestCancelledError(err)
+        ) {
+          onDone()
+          return
+        }
+        if (isFetchNetworkError(err)) {
+          onError(new Error("Connection lost while reading the complete response. Try again."))
+          return
+        }
+        onError(err instanceof Error ? err : new Error(String(err)))
+      }
+      return
     }
-    return parseEndpointErrorEnvelope(trimmed)
-  }
-  const stopForEndpointError = async (error: Error) => {
-    // An endpoint can emit an error event without closing its SSE response.
-    // Cancel the body so that the transport does not keep the connection and
-    // its buffers alive after the caller has already received the failure.
+
+    if (!response.body) {
+      onError(new Error("Response body is null"))
+      return
+    }
+
+    const reader = response.body.getReader()
+    // TextDecoder keeps partial multi-byte state, so it must be scoped to this
+    // response rather than shared across concurrent research requests.
+    const decoder = new TextDecoder()
+    let lineBuffer = ""
+
+    // Diagnostic counters. Some OpenAI-compatible endpoints stream
+    // chain-of-thought through a `reasoning_content` (DeepSeek-R1,
+    // Kimi K2.x) or `reasoning` (Qwen-flavored deployments) field
+    // and only put the actual answer in `delta.content` after
+    // thinking ends. Misbehaving endpoints sometimes emit kilobytes
+    // of reasoning and end the stream with no content at all,
+    // leaving the user with a silent empty analysis. We track the
+    // two channels separately so the stream-end path can tell the
+    // difference between "model said nothing" and "model thought
+    // out loud but never produced an answer". See reasoning-
+    // detector.ts.
+    let contentCharsEmitted = 0
+    let reasoningCharsObserved = 0
+    let finishReason: string | undefined
+    const recordToken = (text: string) => {
+      contentCharsEmitted += text.length
+      onToken(text)
+    }
+    const recordReasoning = (line: string) => {
+      const reasoningParts = extractReasoningTextFromLine(line)
+      for (const part of reasoningParts) {
+        callbacks.onReasoningToken?.(part)
+      }
+    }
+    const processRecord = (line: string): Error | null => {
+      const trimmed = line.trim()
+      if (!trimmed) return null
+
+      reasoningCharsObserved += countReasoningCharsInLine(trimmed)
+      finishReason = streamFinishReason(trimmed) ?? finishReason
+      recordReasoning(trimmed)
+      const token = providerConfig.parseStream(trimmed)
+      if (token !== null) {
+        recordToken(token)
+        return null
+      }
+      return parseEndpointErrorEnvelope(trimmed)
+    }
+    const stopForEndpointError = async (error: Error) => {
+      // An endpoint can emit an error event without closing its SSE response.
+      // Cancel the body so that the transport does not keep the connection and
+      // its buffers alive after the caller has already received the failure.
+      try {
+        await reader.cancel()
+      } catch {
+        // Preserve the endpoint's actionable error if transport cleanup fails.
+      }
+      onError(error)
+    }
+
     try {
-      await reader.cancel()
-    } catch {
-      // Preserve the endpoint's actionable error if transport cleanup fails.
-    }
-    onError(error)
-  }
+      while (true) {
+        const { done, value } = await reader.read()
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
+        if (done) {
+          const finalText = lineBuffer + decoder.decode()
+          for (const line of splitFinalStreamRecords(finalText)) {
+            const endpointError = processRecord(line)
+            if (endpointError) {
+              await stopForEndpointError(endpointError)
+              return
+            }
+          }
+          break
+        }
 
-      if (done) {
-        const finalText = lineBuffer + decoder.decode()
-        for (const line of splitFinalStreamRecords(finalText)) {
+        const [lines, remaining] = parseLines(decoder, value, lineBuffer)
+        lineBuffer = remaining
+
+        for (const line of lines) {
           const endpointError = processRecord(line)
           if (endpointError) {
             await stopForEndpointError(endpointError)
             return
           }
         }
-        break
       }
 
-      const [lines, remaining] = parseLines(decoder, value, lineBuffer)
-      lineBuffer = remaining
-
-      for (const line of lines) {
-        const endpointError = processRecord(line)
-        if (endpointError) {
-          await stopForEndpointError(endpointError)
-          return
-        }
-      }
-    }
-
-    // Stream ended cleanly. If the model produced thinking tokens
-    // but no actual answer, surface that as a clear diagnostic
-    // instead of letting the caller silently see "" (which usually
-    // surfaces several layers up as "analysis not available" with
-    // no clue why). Threshold guards against single-stray-byte
-    // false positives from spurious empty `reasoning:""` deltas.
-    const REASONING_DIAGNOSTIC_THRESHOLD = 200
-    if (contentCharsEmitted === 0 && isTokenLimitFinishReason(finishReason)) {
-      onDone({ finishReason, truncated: true })
-      return
-    }
-    if (
-      contentCharsEmitted === 0 &&
-      reasoningCharsObserved >= REASONING_DIAGNOSTIC_THRESHOLD
-    ) {
-      onError(
-        new Error(
-          `Model produced ${reasoningCharsObserved.toLocaleString()} characters of reasoning / chain-of-thought, but no actual response content. ` +
-          `This usually means the endpoint hit a thinking-token limit, the model didn't transition from thinking to answering, ` +
-          `or the endpoint is misbehaving (the official Anthropic / OpenAI APIs don't have this issue). ` +
-          `Try a shorter input, increase max_tokens, or switch to a different model in Settings.`,
-        ),
-      )
-      return
-    }
-
-    onDone({ finishReason, truncated: isTokenLimitFinishReason(finishReason) })
-  } catch (err) {
-    // The abort can reach us two ways: a real AbortError, or — when the
-    // Tauri HTTP plugin tears down the body stream — a bare *string*
-    // "Request cancelled" passed to controller.error(). The latter is not
-    // an Error, so the old `err instanceof Error` guard let it fall through
-    // to the generic branch and surface verbatim. Recognize both shapes.
-    const isAbort =
-      signal?.aborted ||
-      timeoutFired ||
-      (err instanceof Error && err.name === "AbortError") ||
-      isRequestCancelledError(err)
-    if (isAbort) {
-      // Mirror the pre-fetch catch: distinguish our long-horizon backstop
-      // (an actionable timeout) from a user-initiated cancel (silent).
-      if (timeoutFired) {
-        onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
+      // Stream ended cleanly. If the model produced thinking tokens
+      // but no actual answer, surface that as a clear diagnostic
+      // instead of letting the caller silently see "" (which usually
+      // surfaces several layers up as "analysis not available" with
+      // no clue why). Threshold guards against single-stray-byte
+      // false positives from spurious empty `reasoning:""` deltas.
+      const REASONING_DIAGNOSTIC_THRESHOLD = 200
+      if (contentCharsEmitted === 0 && isTokenLimitFinishReason(finishReason)) {
+        onDone({ finishReason, truncated: true })
         return
       }
-      onDone()
-      return
+      if (
+        contentCharsEmitted === 0 &&
+        reasoningCharsObserved >= REASONING_DIAGNOSTIC_THRESHOLD
+      ) {
+        onError(
+          new Error(
+            `Model produced ${reasoningCharsObserved.toLocaleString()} characters of reasoning / chain-of-thought, but no actual response content. ` +
+            `This usually means the endpoint hit a thinking-token limit, the model didn't transition from thinking to answering, ` +
+            `or the endpoint is misbehaving (the official Anthropic / OpenAI APIs don't have this issue). ` +
+            `Try a shorter input, increase max_tokens, or switch to a different model in Settings.`,
+          ),
+        )
+        return
+      }
+
+      onDone({ finishReason, truncated: isTokenLimitFinishReason(finishReason) })
+    } catch (err) {
+      // The abort can reach us two ways: a real AbortError, or — when the
+      // Tauri HTTP plugin tears down the body stream — a bare *string*
+      // "Request cancelled" passed to controller.error(). The latter is not
+      // an Error, so the old `err instanceof Error` guard let it fall through
+      // to the generic branch and surface verbatim. Recognize both shapes.
+      const isAbort =
+        signal?.aborted ||
+        timeoutFired ||
+        (err instanceof Error && err.name === "AbortError") ||
+        isRequestCancelledError(err)
+      if (isAbort) {
+        // Mirror the pre-fetch catch: distinguish our long-horizon backstop
+        // (an actionable timeout) from a user-initiated cancel (silent).
+        if (timeoutFired) {
+          onError(new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} min. Try a faster model or a smaller context.`))
+          return
+        }
+        onDone()
+        return
+      }
+      if (isFetchNetworkError(err)) {
+        // Stream reader threw a network error mid-response (connection
+        // dropped, server closed early, network blip). Same message
+        // regardless of whether the webview is WebKit or Chromium.
+        onError(new Error("Connection lost during streaming. Try again."))
+        return
+      }
+      onError(err instanceof Error ? err : new Error(String(err)))
+    } finally {
+      reader.releaseLock()
     }
-    if (isFetchNetworkError(err)) {
-      // Stream reader threw a network error mid-response (connection
-      // dropped, server closed early, network blip). Same message
-      // regardless of whether the webview is WebKit or Chromium.
-      onError(new Error("Connection lost during streaming. Try again."))
-      return
-    }
-    onError(err instanceof Error ? err : new Error(String(err)))
   } finally {
-    reader.releaseLock()
+    clearTimeout(timeoutId)
+    signal?.removeEventListener("abort", cancel)
   }
 }
