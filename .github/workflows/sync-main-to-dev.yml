@@ -1,0 +1,101 @@
+name: Sync main → dev
+
+# Fixes are committed to `main` (the release branch). After every push to
+# `main`, merge it back into `dev` so development always includes the fixes,
+# then rebuild `dev` by dispatching CI on it.
+#
+# Pushing with the default GITHUB_TOKEN cannot update files under
+# .github/workflows/ and does not trigger other workflows. Add a fine-grained
+# PAT as the `SYNC_TOKEN` repo secret (Contents + Workflows: read/write) to
+# lift both limits. Without it, merges touching workflows fall back to a PR,
+# or to an issue when Actions is not allowed to open PRs.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: sync-main-to-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HAS_SYNC_TOKEN: ${{ secrets.SYNC_TOKEN != '' }}
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Merge main into dev
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "dev already contains main; nothing to sync."
+            echo "result=up-to-date" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge --no-edit -m "chore(sync): merge main into dev" origin/main; then
+            git merge --abort
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git push origin HEAD:dev; then
+            echo "result=pushed" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=push-rejected" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebuild dev
+        if: steps.merge.outputs.result == 'pushed' && env.HAS_SYNC_TOKEN != 'true'
+        run: gh workflow run ci.yml --ref dev --repo "$GITHUB_REPOSITORY"
+
+      - name: Ask for a manual sync
+        if: steps.merge.outputs.result == 'conflict' || steps.merge.outputs.result == 'push-rejected'
+        env:
+          REASON: ${{ steps.merge.outputs.result }}
+        run: |
+          title="Sync main into dev"
+          body="Automatic merge of \`main\` ($GITHUB_SHA) into \`dev\` failed: **$REASON**.
+
+          Resolve locally, then push dev:
+
+          \`\`\`sh
+          scripts/sync-main-to-dev.sh
+          \`\`\`
+
+          Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --base dev --head main --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh pr comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          elif gh pr create --repo "$GITHUB_REPOSITORY" --base dev --head main --title "$title" --body "$body"; then
+            :
+          else
+            issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+            fi
+          fi
+          echo "::error::main could not be merged into dev automatically ($REASON)."
+          exit 1
