@@ -46,6 +46,14 @@ COPY src-tauri ./src-tauri
 COPY mcp-server ./mcp-server
 RUN sha256sum -c src-tauri/pdfium/SHA256SUMS --ignore-missing
 
+# The desktop release profile (fat LTO, 1 codegen unit) links slowly on a
+# single core. For the image, thin LTO across 16 units compiles several times
+# faster for a slightly larger binary. Pass --build-arg
+# CARGO_PROFILE_RELEASE_LTO=true --build-arg CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
+# to get the exact desktop release build. Cargo reads these as env vars.
+ARG CARGO_PROFILE_RELEASE_LTO=thin
+ARG CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+
 # tauri build runs beforeBuildCommand (npm run build:desktop): MCP server +
 # typecheck + vite build, then compiles the Rust app and bundles the .deb.
 RUN --mount=type=cache,target=/root/.npm \
