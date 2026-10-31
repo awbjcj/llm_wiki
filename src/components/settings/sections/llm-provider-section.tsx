@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { useTransientValue } from "@/hooks/use-transient-value"
 import { ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, XCircle, Plus, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { invoke } from "@tauri-apps/api/core"
@@ -64,7 +65,7 @@ export function LlmProviderSection() {
   const setTaskModelRouting = useWikiStore((s) => s.setTaskModelRouting)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [savedId, setSavedId] = useState<string | null>(null)
+  const [savedId, flashSavedId] = useTransientValue<string | null>(null, 1500)
   const presets = useMemo(() => availableLlmPresets(customLlmPresets), [customLlmPresets])
 
   function toggleExpand(id: string) {
@@ -114,8 +115,7 @@ export function LlmProviderSection() {
         setLlmConfig(resolveProjectLlmConfig(resolved, next, projectLlmOverride, customLlmPresets))
       }
     }
-    setSavedId(id)
-    setTimeout(() => setSavedId((cur) => (cur === id ? null : cur)), 1500)
+    flashSavedId(id)
   }
 
   function toggleActive(id: string) {

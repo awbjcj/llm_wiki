@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useTransientValue } from "@/hooks/use-transient-value"
 import {
   Bot,
   Binary,
@@ -237,7 +238,7 @@ export function SettingsView() {
   const updateAvailable = useUpdateStore((s) => hasAvailableUpdate(s))
 
   const [active, setActive] = useState<CategoryId>("llm")
-  const [saved, setSaved] = useState(false)
+  const [saved, flashSaved] = useTransientValue(false, 2000)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [currentTheme, setCurrentTheme] = useState<AppTheme>("system")
   const [draft, setDraftState] = useState<SettingsDraft>(() =>
@@ -572,8 +573,7 @@ export function SettingsView() {
       useZoomStore.getState().setLevel(draft.zoomLevel)
       await saveZoomLevel(draft.zoomLevel)
 
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      flashSaved(true)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error("[settings] failed to save settings:", err)
@@ -629,6 +629,7 @@ export function SettingsView() {
     }
   }, [
     draft,
+    flashSaved,
     project,
     llmConfig,
     embeddingConfig,

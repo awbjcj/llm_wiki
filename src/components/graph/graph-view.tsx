@@ -892,21 +892,26 @@ export function GraphView() {
 
   // 2. Detect panel drag resize via data-panel-resizing attribute on body
   useEffect(() => {
+    let remountTimer: ReturnType<typeof setTimeout> | null = null
     const observer = new MutationObserver(() => {
       const dragging = document.body.dataset.panelResizing === "true"
       if (dragging && !isResizing) {
         setIsResizing(true)
       }
-      if (!dragging && isResizing) {
+      if (!dragging && isResizing && remountTimer === null) {
         // Drag ended — remount sigma after a tick
-        setTimeout(() => {
+        remountTimer = setTimeout(() => {
+          remountTimer = null
           setSigmaKey((k) => k + 1)
           setIsResizing(false)
         }, 50)
       }
     })
     observer.observe(document.body, { attributes: true, attributeFilter: ["data-panel-resizing"] })
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      if (remountTimer !== null) clearTimeout(remountTimer)
+    }
   }, [isResizing])
 
   // Count nodes by type for legend

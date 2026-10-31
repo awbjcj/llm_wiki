@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useTransientValue } from "@/hooks/use-transient-value"
 import {
   Copy,
   Eye,
@@ -61,7 +62,7 @@ export const API_ENDPOINTS: Array<{ method: "GET" | "POST" | "PATCH"; path: stri
 export function ApiServerSection({ draft, setDraft }: Props) {
   const { t } = useTranslation()
   const [showToken, setShowToken] = useState(false)
-  const [copiedField, setCopiedField] = useState<"token" | "curl" | "chat" | "mcp" | null>(null)
+  const [copiedField, flashCopiedField] = useTransientValue<"token" | "curl" | "chat" | "mcp" | null>(null, 1500)
   const [serverStatus, setServerStatus] = useState<string>("...")
   const [health, setHealth] = useState<ApiHealth | null>(null)
   const [mcpEntryPath, setMcpEntryPath] = useState<string | null>(null)
@@ -110,12 +111,11 @@ export function ApiServerSection({ draft, setDraft }: Props) {
     if (!draft.apiToken) return
     try {
       await navigator.clipboard.writeText(draft.apiToken)
-      setCopiedField("token")
-      setTimeout(() => setCopiedField(null), 1500)
+      flashCopiedField("token")
     } catch (err) {
       console.error("[api-settings] copy token failed:", err)
     }
-  }, [draft.apiToken])
+  }, [draft.apiToken, flashCopiedField])
 
   const sampleCurl = useMemo(() => {
     if (draft.apiAllowUnauthenticated) {
@@ -174,33 +174,30 @@ export function ApiServerSection({ draft, setDraft }: Props) {
   const handleCopyCurl = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(sampleCurl)
-      setCopiedField("curl")
-      setTimeout(() => setCopiedField(null), 1500)
+      flashCopiedField("curl")
     } catch (err) {
       console.error("[api-settings] copy curl failed:", err)
     }
-  }, [sampleCurl])
+  }, [sampleCurl, flashCopiedField])
 
   const handleCopyChatCurl = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(sampleChatCurl)
-      setCopiedField("chat")
-      setTimeout(() => setCopiedField(null), 1500)
+      flashCopiedField("chat")
     } catch (err) {
       console.error("[api-settings] copy streaming chat curl failed:", err)
     }
-  }, [sampleChatCurl])
+  }, [sampleChatCurl, flashCopiedField])
 
   const handleCopyMcpConfig = useCallback(async () => {
     if (!mcpEntryPath) return
     try {
       await navigator.clipboard.writeText(sampleMcpConfig)
-      setCopiedField("mcp")
-      setTimeout(() => setCopiedField(null), 1500)
+      flashCopiedField("mcp")
     } catch (err) {
       console.error("[api-settings] copy MCP config failed:", err)
     }
-  }, [mcpEntryPath, sampleMcpConfig])
+  }, [mcpEntryPath, sampleMcpConfig, flashCopiedField])
 
   const handleOpenHealth = useCallback(() => {
     void openUrl(API_SERVER_HEALTH_URL).catch((err) => {

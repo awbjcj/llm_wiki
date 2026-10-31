@@ -1,4 +1,5 @@
 import { useRef, useState } from "react"
+import { useTransientValue } from "@/hooks/use-transient-value"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Input } from "@/components/ui/input"
@@ -80,7 +81,7 @@ export function WebSearchSection() {
   const anyTxtFilterDir = resolvedConfig.anyTxt?.filterDir ?? ""
   const showBroadAnyTxtWarning = isBroadAnyTxtFilterDir(anyTxtFilterDir)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [savedId, setSavedId] = useState<string | null>(null)
+  const [savedId, flashSavedId] = useTransientValue<string | null>(null, 1500)
   const [testStatus, setTestStatus] = useState<Record<string, { state: "testing" | "ok" | "warning" | "error"; message: string }>>({})
   const testRunRef = useRef<Record<string, number>>({})
 
@@ -105,8 +106,7 @@ export function WebSearchSection() {
       providerConfigs: nextConfigs,
     })
     persist(next).catch(() => {})
-    setSavedId(id)
-    setTimeout(() => setSavedId((cur) => (cur === id ? null : cur)), 1500)
+    flashSavedId(id)
   }
 
   function toggleActive(id: Exclude<SearchProvider, "none">) {
@@ -159,8 +159,7 @@ export function WebSearchSection() {
       },
     })
     persist(next).catch(() => {})
-    setSavedId("anytxt")
-    setTimeout(() => setSavedId((cur) => (cur === "anytxt" ? null : cur)), 1500)
+    flashSavedId("anytxt")
   }
 
   return (

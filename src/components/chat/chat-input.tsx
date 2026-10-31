@@ -553,8 +553,9 @@ export function ChatInput({
                 <button
                   type="button"
                   onClick={() => removeImage(i)}
-                  className="absolute right-0.5 top-0.5 rounded-full bg-background/80 p-0.5 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-destructive group-hover:opacity-100"
+                  className="absolute right-0.5 top-0.5 rounded-full bg-background/80 p-0.5 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
                   title={t("chat.removeImage")}
+                  aria-label={t("chat.removeImage")}
                 >
                   <X className="h-3 w-3" />
                 </button>

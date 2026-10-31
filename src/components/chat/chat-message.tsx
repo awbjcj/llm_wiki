@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, useMemo } from "react"
+import { useTransientValue } from "@/hooks/use-transient-value"
 import { useTranslation } from "react-i18next"
 import { convertFileSrc } from "@tauri-apps/api/core"
 import ReactMarkdown from "react-markdown"
@@ -516,7 +517,7 @@ function initialUserInputAnswers(request: ChatUserInputRequest): Record<string, 
 
 function CopyButton({ content }: { content: string }) {
   const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
+  const [copied, flashCopied] = useTransientValue(false, 2000)
 
   const handleCopy = useCallback(async () => {
     // Strip HTML comments and thinking blocks before copying
@@ -526,10 +527,13 @@ function CopyButton({ content }: { content: string }) {
       .replace(/<think(?:ing)?>\s*[\s\S]*$/gi, "")
       .trim()
 
-    await navigator.clipboard.writeText(clean)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }, [content])
+    try {
+      await navigator.clipboard.writeText(clean)
+      flashCopied(true)
+    } catch (err) {
+      console.error("[chat] copy to clipboard failed:", err)
+    }
+  }, [content, flashCopied])
 
   return (
     <button
@@ -547,7 +551,7 @@ function CopyButton({ content }: { content: string }) {
 function SaveToWikiButton({ content, visible }: { content: string; visible: boolean }) {
   const { t } = useTranslation()
   const project = useWikiStore((s) => s.project)
-  const [saved, setSaved] = useState(false)
+  const [saved, flashSaved] = useTransientValue(false, 2000)
   const [saving, setSaving] = useState(false)
 
   const handleSave = useCallback(async () => {
@@ -613,8 +617,7 @@ function SaveToWikiButton({ content, visible }: { content: string; visible: bool
       // Refresh file tree and update graph
       await refreshProjectFileTree(pp, { bumpDataVersion: true })
 
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      flashSaved(true)
 
       // Full auto-ingest: extract entities, concepts, cross-references from saved content
       const llmConfig = getTaskLlmConfig("ingest")
@@ -629,7 +632,7 @@ function SaveToWikiButton({ content, visible }: { content: string; visible: bool
     } finally {
       setSaving(false)
     }
-  }, [project, content, saving])
+  }, [project, content, saving, flashSaved])
 
   if (!visible && !saved) return null
 
