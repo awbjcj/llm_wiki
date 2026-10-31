@@ -1,13 +1,62 @@
 name: CI
 
+# Branch model: `dev` is the integration branch for new work; `main` is the
+# release branch and takes hotfixes. Every push / PR to either branch runs the
+# quality gates. Fixes landing on `main` are merged back into `dev` by
+# sync-main-to-dev.yml, which then dispatches this workflow on `dev`.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  # Fast gate (shift left): typecheck + unit tests before the slow native builds.
+  quality:
+    name: Typecheck & tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mcp-server/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm --prefix mcp-server ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:mocks
+
+      - name: MCP server tests
+        run: npm run mcp:test
+
+      - name: Web sign-in service tests
+        run: python3 -m unittest discover -s docker/tests
+
   check:
+    name: Native build (${{ matrix.platform }})
+    needs: quality
     strategy:
       fail-fast: false
       matrix:
@@ -60,3 +109,27 @@ jobs:
       - name: Check Rust build
         working-directory: src-tauri
         run: cargo build
+
+  # The browser-served image (Dockerfile + docker/rootfs) is what gets
+  # deployed; make sure it still builds. Build only, nothing is pushed.
+  docker:
+    name: Docker image build
+    needs: quality
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: llm-wiki:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

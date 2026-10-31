@@ -432,6 +432,22 @@ docker compose up -d --build  # web UI on http://127.0.0.1:5800 (host loopback)
 - **Display:** noVNC resizes the remote display to the browser viewport (1:1 pixels, no downscaling) and streams at JPEG quality 9, so graph edges and small text stay sharp. Touch devices still scale. The app renders WebGL in software (no GPU in the container), so thin graph edges are less smooth than in the desktop app. With Windows display scaling above 100%, set the browser zoom to 100% ÷ scaling (for example 80% at 125%) for crisp pixels.
 - **Domain:** `docker/nginx/llm-wiki.vsda.top.conf` is an nginx TLS reverse-proxy server block for the web UI, with WebSocket upgrade. Install it with `sudo cp docker/nginx/llm-wiki.vsda.top.conf /etc/nginx/sites-enabled/ && sudo nginx -t && sudo systemctl reload nginx`.
 
+### Branches & CI
+
+- **`dev`** is for development. Commit features here. The Docker deployment is built from `dev`.
+- **`main`** is for releases and fixes. Commit fixes here, then merge them back into `dev`.
+- **CI** (`.github/workflows/ci.yml`) runs on every push and PR to either branch. A fast gate runs typecheck, unit tests, MCP tests, and the web sign-in tests. After it passes, CI runs the native builds on macOS, Linux, and Windows and builds the Docker image.
+- **Auto-sync** (`.github/workflows/sync-main-to-dev.yml`): each push to `main` merges `main` into `dev` and runs CI again on `dev`. If the merge conflicts, or changes workflow files without the `SYNC_TOKEN` secret (a fine-grained PAT with Contents and Workflows write access), the job opens a PR or an issue asking for a manual sync.
+
+```bash
+# Fix on main, then merge it back into dev, run the gates, push, and rebuild the container from dev
+git switch main && git commit -am "fix: ..." && git push origin main
+scripts/sync-main-to-dev.sh            # --no-test / --no-push / --no-rebuild
+
+# Release dev to main (a vX.Y.Z tag also triggers the desktop release build)
+scripts/release.sh [--tag v0.6.14]
+```
+
 ### Chrome Extension
 
 1. Open `chrome://extensions`
