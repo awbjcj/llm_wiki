@@ -27,6 +27,11 @@ AGENTS.md
 
 # Benchmark and test data (local only)
 tests/
+!docker/tests/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
 
 # Editor directories and files
 .vscode/*
@@ -49,3 +54,6 @@ pnpm-debug.log*
 # Brainstorm assets (not tracked in source control)
 .superpowers/
 .claude/
+
+# Docker deployment data (wiki projects)
+data/

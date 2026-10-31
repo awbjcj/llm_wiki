@@ -1,0 +1,75 @@
+volumes:
+    llm-wiki-config:
+        driver: local
+
+services:
+    llm-wiki:
+        image: llm-wiki:latest
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: llm-wiki
+        # host networking (same as vsda-deep-agent): copilot-api listens only on
+        # the host's 127.0.0.1:4141, and LLM Wiki's own local API/clip servers
+        # (127.0.0.1:19828 / :19827) stay reachable from host-side MCP clients.
+        # WEB_LOCALHOST_ONLY keeps the noVNC web UI on host loopback; the host
+        # nginx publishes it as https://llm-wiki.vsda.top
+        # (docker/nginx/llm-wiki.vsda.top.conf).
+        network_mode: host
+        restart: unless-stopped
+        shm_size: "1gb"
+        env_file:
+            - path: .env
+              required: false
+        environment:
+            USER_ID: ${LLM_WIKI_UID:-1000}
+            GROUP_ID: ${LLM_WIKI_GID:-1000}
+            TZ: ${TZ:-America/New_York}
+            WEB_LISTENING_PORT: ${LLM_WIKI_WEB_PORT:-5800}
+            WEB_LOCALHOST_ONLY: "1"
+            VNC_LISTENING_PORT: "-1"
+            DISPLAY_WIDTH: ${LLM_WIKI_DISPLAY_WIDTH:-1920}
+            DISPLAY_HEIGHT: ${LLM_WIKI_DISPLAY_HEIGHT:-1080}
+            DARK_MODE: ${LLM_WIKI_DARK_MODE:-0}
+            # Login page in front of the remote session. Users sign in with
+            # their VSDA Deep Agent account; the container's webauth service
+            # checks credentials against the VSDA API (vsda_webauth.py). TLS
+            # terminates at the host nginx, hence ALLOW_INSECURE for the
+            # loopback hop.
+            WEB_AUTHENTICATION: ${LLM_WIKI_WEB_AUTH:-1}
+            WEB_AUTHENTICATION_ALLOW_INSECURE: "1"
+            # VSDA Deep Agent backend (host network, loopback).
+            LLM_WIKI_VSDA_API_URL: ${LLM_WIKI_VSDA_API_URL:-http://127.0.0.1:8000}
+            # VSDA Deep Agent web app: registration, password reset, and
+            # account changes are linked there.
+            LLM_WIKI_VSDA_APP_URL: ${LLM_WIKI_VSDA_APP_URL:-https://agent.vsda.top/chat}
+            # Provider settings seeded into the app store (see
+            # docker/rootfs/etc/cont-init.d/55-llm-wiki-seed.sh).
+            LLM_WIKI_PROVIDER_SEED: ${LLM_WIKI_PROVIDER_SEED:-missing}
+            LLM_WIKI_LLM_BASE_URL: ${LLM_WIKI_LLM_BASE_URL:-http://127.0.0.1:4141/v1}
+            LLM_WIKI_LLM_API_KEY: ${LLM_WIKI_LLM_API_KEY:-copilot-api}
+            LLM_WIKI_LLM_MODEL: ${LLM_WIKI_LLM_MODEL:-claude-sonnet-5-5}
+            LLM_WIKI_LLM_CONTEXT_SIZE: ${LLM_WIKI_LLM_CONTEXT_SIZE:-400000}
+            LLM_WIKI_EMBEDDING_URL: ${LLM_WIKI_EMBEDDING_URL:-http://127.0.0.1:4141/v1/embeddings}
+            LLM_WIKI_EMBEDDING_API_KEY: ${LLM_WIKI_EMBEDDING_API_KEY:-copilot-api}
+            LLM_WIKI_EMBEDDING_MODEL: ${LLM_WIKI_EMBEDDING_MODEL:-text-embedding-3-small}
+            LLM_WIKI_DEFAULT_PROJECT: /wikis/${LLM_WIKI_KB_NAME:-knowledge-base}
+        volumes:
+            # App state: settings store, vector index cache, logs.
+            - llm-wiki-config:/config
+            # Wiki projects: create/open projects under /wikis in the app.
+            - ${LLM_WIKI_DATA_DIR:-./data/wikis}:/wikis
+            # Exported knowledge base project, opened by default on first start.
+            # create_host_path=false: fail instead of mounting an empty folder
+            # when the external disk behind the path is not mounted.
+            - type: bind
+              source: ${LLM_WIKI_KB_DIR:?set LLM_WIKI_KB_DIR in .env}
+              target: /wikis/${LLM_WIKI_KB_NAME:-knowledge-base}
+              bind:
+                  create_host_path: false
+        healthcheck:
+            test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:$${WEB_LISTENING_PORT}/ || exit 1"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 30s

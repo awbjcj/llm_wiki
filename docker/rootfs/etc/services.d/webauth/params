@@ -1,0 +1,3 @@
+#!/bin/sh
+# The VSDA-backed webauth reads its settings from LLM_WIKI_* variables.
+exit 0

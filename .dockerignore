@@ -1,0 +1,18 @@
+.git
+**/node_modules
+dist
+dist-ssr
+dist-rc
+src-tauri/target
+src-tauri/gen
+mcp-server/dist
+data
+.env
+*.log
+# Deployment-only files: keep edits from invalidating the Rust build cache.
+Dockerfile
+.dockerignore
+docker-compose.yml
+.env.example
+docker/nginx
+README*.md

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Replaces the base image's webauth binary: sign-in is checked against the
+# VSDA Deep Agent user database (see /opt/llm-wiki-auth/vsda_webauth.py).
+# Arguments from ./params are not used.
+set -u
+exec python3 -u /opt/llm-wiki-auth/vsda_webauth.py
