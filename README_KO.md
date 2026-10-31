@@ -453,6 +453,7 @@ LLM Wiki에는 `http://127.0.0.1:19828`의 내장 로컬 HTTP API가 포함되�
 - `GET /api/v1/health` — server status(no auth)
 - `GET /api/v1/projects` — projects list
 - `GET /api/v1/projects/{id}/files` / `files/content` — files and content read
+- `GET /api/v1/projects/{id}/files/image?path=wiki/media/...` — read one embedded PNG/JPEG/GIF/WebP image under `wiki/` or `raw/sources/` as base64 JSON (`mimeType`, `size`, `contentBase64`; 10 MiB max)
 - `POST /api/v1/projects/{id}/search` — `mode`, `tokenHits`, `vectorHits`, per-result `vectorScore`를 반환하는 **hybrid** retrieval(keyword + vector)
 - `POST /api/v1/projects/{id}/chat` — 비스트리밍 Rust 백엔드 Agent chat 엔드포인트로 assistant message, references, usage, tool events를 반환하며 Wiki/Source/Web/AnyTXT 검색을 지원합니다. `mode: "deep"`은 증거 수집 범위를 넓힙니다
 - `GET /api/v1/projects/{id}/graph` — wikilinks graph

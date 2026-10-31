@@ -28,6 +28,7 @@ const MAX_CHAT_BODY_BYTES: usize = 40 * 1024 * 1024;
 // transport boundary above the authoritative 2 MiB decoded-content limit.
 const MAX_PAGE_WRITE_BODY_BYTES: usize = 6 * 2 * 1024 * 1024 + 16 * 1024;
 const MAX_FILE_CONTENT_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_IMAGE_CONTENT_BYTES: u64 = 10 * 1024 * 1024;
 const DEFAULT_MAX_FILES: usize = 2_000;
 const HARD_MAX_FILES: usize = 10_000;
 const DEFAULT_MAX_REVIEWS: usize = 200;
@@ -362,6 +363,9 @@ fn handle_request(
         (&Method::Get, ["projects", project_id, "files"]) => handle_files(app, project_id, query),
         (&Method::Get, ["projects", project_id, "files", "content"]) => {
             handle_file_content(app, project_id, query)
+        }
+        (&Method::Get, ["projects", project_id, "files", "image"]) => {
+            handle_file_image(app, project_id, query)
         }
         (&Method::Get, ["projects", project_id, "reviews"]) => {
             handle_reviews(app, project_id, query)
@@ -984,6 +988,76 @@ fn handle_file_content(app: &AppHandle, project_id: &str, query: &str) -> ApiRes
         })),
         Err(_) => err(415, "File is not valid UTF-8 text"),
     }
+}
+
+/// Return one embedded raster image (for example `wiki/media/<slug>/img.png`)
+/// as base64 JSON so API clients can save the images that search results and
+/// pages reference with `![alt](url)`.
+fn handle_file_image(app: &AppHandle, project_id: &str, query: &str) -> ApiResponse {
+    use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+
+    let project = match resolve_project(app, project_id) {
+        Ok(project) => project,
+        Err(e) => return err(404, e),
+    };
+    let params = parse_query(query);
+    let Some(rel) = params.get("path") else {
+        return err(400, "Missing path query parameter");
+    };
+    match read_project_image(&project.path, rel) {
+        Ok(image) => ok(json!({
+            "ok": true,
+            "projectId": project.id,
+            "path": rel,
+            "mimeType": image.mime_type,
+            "size": image.bytes.len(),
+            "contentBase64": B64.encode(&image.bytes),
+        })),
+        Err((status, message)) => err(status, message),
+    }
+}
+
+struct ProjectImage {
+    mime_type: &'static str,
+    bytes: Vec<u8>,
+}
+
+fn image_mime_for_rel(rel: &str) -> Option<&'static str> {
+    let rel = normalize_path(rel).to_lowercase();
+    let ext = Path::new(&rel)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    match ext {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+fn read_project_image(project_path: &str, rel: &str) -> Result<ProjectImage, (u16, String)> {
+    if !is_public_project_rel(rel) {
+        return Err((403, "Path is not exposed by the local API".to_string()));
+    }
+    let Some(mime_type) = image_mime_for_rel(rel) else {
+        return Err((
+            415,
+            "Only PNG, JPEG, GIF, and WebP project images can be read via this endpoint"
+                .to_string(),
+        ));
+    };
+    let path = safe_join(project_path, rel).map_err(|e| (400, e))?;
+    let meta = fs::metadata(&path).map_err(|e| (404, format!("File not found: {e}")))?;
+    if !meta.is_file() {
+        return Err((404, "File not found".to_string()));
+    }
+    if meta.len() > MAX_IMAGE_CONTENT_BYTES {
+        return Err((413, "Image is too large to return via API".to_string()));
+    }
+    let bytes = fs::read(&path).map_err(|e| (500, format!("Failed to read image: {e}")))?;
+    Ok(ProjectImage { mime_type, bytes })
 }
 
 fn safe_join(project_path: &str, rel: &str) -> Result<PathBuf, String> {
@@ -3776,6 +3850,59 @@ mod tests {
         assert!(!is_text_content_rel("wiki/media/image.png"));
         assert!(!is_text_content_rel("raw/sources/book.pdf"));
         assert!(!is_text_content_rel("raw/sources/notes.rtf"));
+    }
+
+    fn image_test_project() -> PathBuf {
+        let root = std::env::temp_dir().join(format!("llm-wiki-image-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("wiki/media/source")).unwrap();
+        root
+    }
+
+    #[test]
+    fn project_image_reads_allowed_raster_files() {
+        let root = image_test_project();
+        fs::write(root.join("wiki/media/source/001.PNG"), b"\x89PNG-bytes").unwrap();
+        let image =
+            read_project_image(root.to_str().unwrap(), "wiki/media/source/001.PNG").unwrap();
+        assert_eq!(image.mime_type, "image/png");
+        assert_eq!(image.bytes, b"\x89PNG-bytes");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_image_rejects_scope_type_traversal_and_missing_files() {
+        let root = image_test_project();
+        let project = root.to_str().unwrap();
+        fs::write(root.join("wiki/media/source/page.md"), b"text").unwrap();
+        fs::write(root.join("secret.png"), b"png").unwrap();
+
+        assert_eq!(read_project_image(project, "secret.png").err().unwrap().0, 403);
+        assert_eq!(
+            read_project_image(project, "wiki/media/source/page.md").err().unwrap().0,
+            415
+        );
+        assert_eq!(read_project_image(project, "wiki/media/x.svg").err().unwrap().0, 415);
+        assert_eq!(
+            read_project_image(project, "wiki/../secret.png").err().unwrap().0,
+            403
+        );
+        assert_eq!(
+            read_project_image(project, "wiki/media/source/missing.png").err().unwrap().0,
+            404
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_image_rejects_oversized_files() {
+        let root = image_test_project();
+        let file = fs::File::create(root.join("wiki/media/source/big.jpg")).unwrap();
+        file.set_len(MAX_IMAGE_CONTENT_BYTES + 1).unwrap();
+        let error = read_project_image(root.to_str().unwrap(), "wiki/media/source/big.jpg")
+            .err()
+            .unwrap();
+        assert_eq!(error.0, 413);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

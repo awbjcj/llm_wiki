@@ -444,6 +444,7 @@ LLM Wiki 内置一个本地 HTTP API（监听 `http://127.0.0.1:19828`，Token �
 - `GET /api/v1/health` —— 服务状态（无需鉴权）
 - `GET /api/v1/projects` —— 项目列表
 - `GET /api/v1/projects/{id}/files` / `files/content` —— 读取文件树与内容
+- `GET /api/v1/projects/{id}/files/image?path=wiki/media/...` —— 以 base64 JSON 读取 `wiki/` 或 `raw/sources/` 下的单张 PNG/JPEG/GIF/WebP 嵌入图片（`mimeType`、`size`、`contentBase64`；最大 10 MiB），便于客户端保存搜索结果 `images` 中列出的图片
 - `POST /api/v1/projects/{id}/search` —— **Hybrid 混合检索**（关键词 + 向量），返回 `mode`、`tokenHits`、`vectorHits`，每条结果带 `vectorScore`
 - `POST /api/v1/projects/{id}/chat` —— 非流式 Rust 后端 Agent 聊天接口，返回助手消息、引用、用量和工具事件；支持 Wiki/Source/Web/AnyTXT 检索，`mode: "deep"` 会扩展证据收集范围
 - `GET /api/v1/projects/{id}/graph` —— Wikilinks 知识图谱

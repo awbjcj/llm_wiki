@@ -453,6 +453,7 @@ LLM Wiki は組み込みのローカル HTTP API（`http://127.0.0.1:19828` で�
 - `GET /api/v1/health` — サーバー状態（認証不要）
 - `GET /api/v1/projects` — プロジェクト一覧
 - `GET /api/v1/projects/{id}/files` / `files/content` — ファイルツリーと本文の取得
+- `GET /api/v1/projects/{id}/files/image?path=wiki/media/...` — `wiki/` または `raw/sources/` 配下の埋め込み PNG/JPEG/GIF/WebP 画像を base64 JSON（`mimeType`、`size`、`contentBase64`、最大 10 MiB）で取得し、検索結果の `images` に挙がった画像をクライアントが保存できるようにする
 - `POST /api/v1/projects/{id}/search` — **ハイブリッド検索**（キーワード + ベクトル）。`mode`、`tokenHits`、`vectorHits` を返し、各結果に `vectorScore` を付与
 - `POST /api/v1/projects/{id}/chat` — 非ストリーミングの Rust バックエンド Agent chat エンドポイント。assistant message、references、usage、tool events を返し、Wiki / Source / Web / AnyTXT 検索に対応します。`mode: "deep"` では証拠収集範囲を広げます
 - `GET /api/v1/projects/{id}/graph` — wikilinks の知識グラフ
