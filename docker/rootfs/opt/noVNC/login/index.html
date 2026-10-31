@@ -9,12 +9,14 @@
     <link rel="icon" href="master_icon.png?v=UNIQUE_VERSION">
     <link rel="stylesheet" href="llm-wiki-login.css?v=UNIQUE_VERSION">
     <script>
-        // Apply the saved theme before first paint to avoid a light/dark flash.
+        // Match the saved or system theme before the atlas's first paint.
         (function () {
             try {
                 var saved = localStorage.getItem('llm-wiki-login-theme');
                 if (saved === 'dark' || saved === 'light') {
                     document.documentElement.dataset.theme = saved;
+                } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    document.documentElement.dataset.theme = 'dark';
                 }
             } catch (e) { /* storage unavailable */ }
         })();
@@ -23,50 +25,137 @@
 </head>
 <body>
 <div class="shell">
+    <!-- A still knowledge graph: source nodes and connections at different depths. -->
+    <div class="knowledge-atlas" aria-hidden="true">
+        <svg class="atlas__art" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" focusable="false">
+            <g class="atlas__cluster atlas__cluster--near">
+                <path class="atlas__mesh" d="M-90 770 -25 855M-90 770 15 690M-90 770 105 800M15 690 125 635M15 690 105 800M125 635 245 590M125 635 225 730M245 590 365 625M245 590 225 730M365 625 485 570M365 625 480 700M485 570 610 605M485 570 480 700M610 605 745 565M610 605 480 700M745 565 880 620M745 565 760 710M880 620 915 760M880 620 760 710M-25 855 105 800M-25 855 30 995M105 800 225 730M105 800 160 930M225 730 350 775M350 775 310 875M350 775 480 700M650 780 585 875M650 780 760 710M650 780 735 920M915 760 875 875M915 760 760 710M30 995 160 930M30 995 155 1090M160 930 310 875M310 875 300 1020M455 945 460 1090M455 945 585 875M455 945 310 875M585 875 610 1010M735 920 765 1060M735 920 875 875M735 920 610 1010M875 875 925 1000M155 1090 160 930M155 1090 300 1020M300 1020 160 930M460 1090 610 1010M460 1090 300 1020M610 1010 765 1060M765 1060 925 1000M925 1000 735 920"/>
+                <g class="atlas__vertices">
+                    <rect x="-91.5" y="768.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="13.5" y="688.5" width="3" height="3"/>
+                    <rect x="123.5" y="633.5" width="3" height="3"/>
+                    <rect x="243.5" y="588.5" width="3" height="3"/>
+                    <rect x="363.5" y="623.5" width="3" height="3"/>
+                    <rect x="483.5" y="568.5" width="3" height="3"/>
+                    <rect x="608.5" y="603.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="743.5" y="563.5" width="3" height="3"/>
+                    <rect x="878.5" y="618.5" width="3" height="3"/>
+                    <rect x="-26.5" y="853.5" width="3" height="3"/>
+                    <rect x="103.5" y="798.5" width="3" height="3"/>
+                    <rect x="223.5" y="728.5" width="3" height="3"/>
+                    <rect x="348.5" y="773.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="478.5" y="698.5" width="3" height="3"/>
+                    <rect x="648.5" y="778.5" width="3" height="3"/>
+                    <rect x="758.5" y="708.5" width="3" height="3"/>
+                    <rect x="913.5" y="758.5" width="3" height="3"/>
+                    <rect x="28.5" y="993.5" width="3" height="3"/>
+                    <rect x="158.5" y="928.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="308.5" y="873.5" width="3" height="3"/>
+                    <rect x="453.5" y="943.5" width="3" height="3"/>
+                    <rect x="583.5" y="873.5" width="3" height="3"/>
+                    <rect x="733.5" y="918.5" width="3" height="3"/>
+                    <rect x="873.5" y="873.5" width="3" height="3"/>
+                    <rect x="153.5" y="1088.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="298.5" y="1018.5" width="3" height="3"/>
+                    <rect x="458.5" y="1088.5" width="3" height="3"/>
+                    <rect x="608.5" y="1008.5" width="3" height="3"/>
+                    <rect x="763.5" y="1058.5" width="3" height="3"/>
+                    <rect x="923.5" y="998.5" width="3" height="3"/>
+                </g>
+            </g>
+            <g class="atlas__cluster atlas__cluster--far">
+                <path class="atlas__mesh" d="M990 -70 1110 -15M990 -70 975 100M990 -70 1095 150M1110 -15 1240 -70M1110 -15 1225 85M1240 -70 1370 -10M1240 -70 1225 85M1370 -10 1390 100M1370 -10 1500 -65M1500 -65 1650 10M1500 -65 1390 100M1650 10 1650 110M1650 10 1510 160M975 100 1095 150M975 100 1110 -15M1095 150 1140 240M1095 150 1225 85M1390 100 1510 160M1390 100 1400 250M1510 160 1400 250M1510 160 1650 110M1650 110 1700 270M1020 290 1140 240M1020 290 1110 415M1020 290 1095 150M1140 240 1270 310M1270 310 1380 400M1270 310 1400 250M1270 310 1240 450M1555 315 1700 270M1555 315 1515 465M1555 315 1510 160M1700 270 1680 430M1110 415 1240 450M1110 415 1140 240M1240 450 1380 400M1380 400 1515 465M1515 465 1680 430M1680 430 1555 315"/>
+                <g class="atlas__vertices">
+                    <rect x="988.5" y="-71.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="1108.5" y="-16.5" width="3" height="3"/>
+                    <rect x="1238.5" y="-71.5" width="3" height="3"/>
+                    <rect x="1368.5" y="-11.5" width="3" height="3"/>
+                    <rect x="1498.5" y="-66.5" width="3" height="3"/>
+                    <rect x="1648.5" y="8.5" width="3" height="3"/>
+                    <rect x="973.5" y="98.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="1093.5" y="148.5" width="3" height="3"/>
+                    <rect x="1223.5" y="83.5" width="3" height="3"/>
+                    <rect x="1388.5" y="98.5" width="3" height="3"/>
+                    <rect x="1508.5" y="158.5" width="3" height="3"/>
+                    <rect x="1648.5" y="108.5" width="3" height="3"/>
+                    <rect x="1018.5" y="288.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="1138.5" y="238.5" width="3" height="3"/>
+                    <rect x="1268.5" y="308.5" width="3" height="3"/>
+                    <rect x="1398.5" y="248.5" width="3" height="3"/>
+                    <rect x="1553.5" y="313.5" width="3" height="3"/>
+                    <rect x="1698.5" y="268.5" width="3" height="3"/>
+                    <rect x="1108.5" y="413.5" width="3" height="3" class="atlas__vertex--prominent"/>
+                    <rect x="1238.5" y="448.5" width="3" height="3"/>
+                    <rect x="1378.5" y="398.5" width="3" height="3"/>
+                    <rect x="1513.5" y="463.5" width="3" height="3"/>
+                    <rect x="1678.5" y="428.5" width="3" height="3"/>
+                </g>
+            </g>
+            <g class="atlas__edges">
+                <path d="M85 210 190 130 360 170 540 75 720 150 970 80 1170 180 1390 100 1515 300 1300 390 1020 340 820 420 610 360 390 470 170 440 85 210M70 660 170 440 360 170 610 360 720 150M70 660 250 730 430 650 390 470M250 730 450 960 650 780 430 650 610 360M650 780 810 670 820 420 1020 340 1170 180 1300 390 1230 650 1030 760 810 670M1230 650 1450 800 1550 570 1515 300M1030 760 1150 960 1450 800M650 780 880 940 1030 760M100 940 250 730M450 960 880 940"/>
+                <path class="atlas__edge--faint" d="M190 130 170 440 430 650 820 420 1170 180M540 75 610 360 1020 340 1230 650 1550 570M70 660 100 940 450 960M810 670 1150 960M1300 390 1550 570"/>
+            </g>
+            <g class="atlas__bridges">
+                <path d="M15 690 85 210 360 170 610 360 820 420 1170 180 1390 100 1650 10"/>
+                <path d="M155 1090 250 730 650 780 810 670 1230 650 1450 800 1680 430"/>
+            </g>
+            <g class="atlas__nodes">
+                <rect x="82.5" y="207.5" width="5" height="5"/>
+                <rect x="188.5" y="128.5" width="3" height="3"/>
+                <rect x="358.5" y="168.5" width="3" height="3"/>
+                <rect x="538.5" y="73.5" width="3" height="3"/>
+                <rect x="717.5" y="147.5" width="5" height="5"/>
+                <rect x="968.5" y="78.5" width="3" height="3"/>
+                <rect x="1168.5" y="178.5" width="3" height="3"/>
+                <rect x="1388.5" y="98.5" width="3" height="3"/>
+                <rect x="1512.5" y="297.5" width="5" height="5"/>
+                <rect x="1298.5" y="388.5" width="3" height="3"/>
+                <rect x="1018.5" y="338.5" width="3" height="3"/>
+                <rect x="818.5" y="418.5" width="3" height="3"/>
+                <rect x="607.5" y="357.5" width="5" height="5"/>
+                <rect x="388.5" y="468.5" width="3" height="3"/>
+                <rect x="168.5" y="438.5" width="3" height="3"/>
+                <rect x="68.5" y="658.5" width="3" height="3"/>
+                <rect x="247.5" y="727.5" width="5" height="5"/>
+                <rect x="428.5" y="648.5" width="3" height="3"/>
+                <rect x="648.5" y="778.5" width="3" height="3"/>
+                <rect x="808.5" y="668.5" width="3" height="3"/>
+                <rect x="1027.5" y="757.5" width="5" height="5"/>
+                <rect x="1228.5" y="648.5" width="3" height="3"/>
+                <rect x="1448.5" y="798.5" width="3" height="3"/>
+                <rect x="1548.5" y="568.5" width="3" height="3"/>
+                <rect x="1147.5" y="957.5" width="5" height="5"/>
+                <rect x="878.5" y="938.5" width="3" height="3"/>
+                <rect x="448.5" y="958.5" width="3" height="3"/>
+                <rect x="98.5" y="938.5" width="3" height="3"/>
+            </g>
+            <g class="atlas__junctions">
+                <path d="m360 164 6 6-6 6-6-6Z"/>
+                <path d="m820 412 8 8-8 8-8-8Z"/>
+                <path d="m1230 644 6 6-6 6-6-6Z"/>
+                <path d="m250 724 6 6-6 6-6-6Z"/>
+                <path d="m1030 754 6 6-6 6-6-6Z"/>
+            </g>
+            <g class="atlas__discoveries">
+                <path d="m650 774 6 6-6 6-6-6Z"/>
+                <path d="m1390 95 5 5-5 5-5-5Z"/>
+                <rect x="387.5" y="467.5" width="5" height="5"/>
+                <rect x="1167.5" y="177.5" width="5" height="5"/>
+            </g>
+        </svg>
+    </div>
 
     <!-- Brand panel (wide screens) -->
     <aside class="brand" aria-label="About APP_NAME">
-        <svg class="brand__graph" viewBox="0 0 480 400" aria-hidden="true" focusable="false">
-            <g class="graph__edges">
-                <line x1="60" y1="300" x2="150" y2="220"/>
-                <line x1="150" y1="220" x2="250" y2="250"/>
-                <line x1="150" y1="220" x2="190" y2="120"/>
-                <line x1="190" y1="120" x2="300" y2="90"/>
-                <line x1="250" y1="250" x2="300" y2="90"/>
-                <line x1="250" y1="250" x2="360" y2="200"/>
-                <line x1="300" y1="90" x2="410" y2="60"/>
-                <line x1="360" y1="200" x2="410" y2="60"/>
-                <line x1="360" y1="200" x2="430" y2="300"/>
-                <line x1="250" y1="250" x2="280" y2="350"/>
-                <line x1="280" y1="350" x2="430" y2="300"/>
-                <line x1="60" y1="300" x2="110" y2="370"/>
-                <line x1="110" y1="370" x2="280" y2="350"/>
-                <line x1="190" y1="120" x2="90" y2="70"/>
-            </g>
-            <g class="graph__nodes">
-                <circle cx="60" cy="300" r="5"/>
-                <circle cx="150" cy="220" r="7"/>
-                <circle cx="190" cy="120" r="5"/>
-                <circle cx="300" cy="90" r="6"/>
-                <circle cx="360" cy="200" r="5"/>
-                <circle cx="410" cy="60" r="4"/>
-                <circle cx="430" cy="300" r="5"/>
-                <circle cx="280" cy="350" r="4"/>
-                <circle cx="110" cy="370" r="4"/>
-                <circle cx="90" cy="70" r="4"/>
-            </g>
-            <circle class="graph__focus-ring" cx="250" cy="250" r="18"/>
-            <circle class="graph__focus" cx="250" cy="250" r="8"/>
-        </svg>
-
         <header class="brand__top">
-            <img class="brand__logo" src="assets/aptiv_logo_white.svg?v=UNIQUE_VERSION" alt="Aptiv" width="104" height="24">
+            <img class="brand__logo brand__logo--light" src="assets/aptiv_logo_color.svg?v=UNIQUE_VERSION" alt="Aptiv" width="104" height="24">
+            <img class="brand__logo brand__logo--dark" src="assets/aptiv_logo_white.svg?v=UNIQUE_VERSION" alt="Aptiv" width="104" height="24">
+            <span class="brand__product" translate="no">LLM Wiki</span>
         </header>
 
         <div class="brand__body">
-            <p class="eyebrow eyebrow--on-dark">VSDA knowledge base</p>
             <p class="brand__headline">Engineering knowledge, compiled and <span class="brand__highlight">connected</span>.</p>
-            <p class="brand__lede">Search, read, and research the team wiki. Every answer links back to the source documents it came from.</p>
+            <p class="brand__lede">Search, read, and research the VSDA team wiki. Every answer links back to the source documents it came from.</p>
 
             <ul class="brand__features">
                 <li>
@@ -85,7 +174,12 @@
         </div>
 
         <footer class="brand__footer">
-            <span>Precision. Innovation. Safety.</span>
+            <div class="atlas-key" aria-label="From sources to connected knowledge">
+                <span><i class="atlas-key__source" aria-hidden="true"></i>Sources</span>
+                <span><i class="atlas-key__connection" aria-hidden="true"></i>Connections</span>
+                <span><i class="atlas-key__knowledge" aria-hidden="true"></i>Knowledge</span>
+            </div>
+            <span class="brand__tagline">Precision. Innovation. Safety.</span>
         </footer>
     </aside>
 
@@ -102,8 +196,7 @@
 
         <div class="panel__content">
             <section class="signin" aria-labelledby="signinTitle">
-                <p class="eyebrow">APP_NAME</p>
-                <h1 class="signin__title" id="signinTitle">Sign in</h1>
+                <h1 class="signin__title" id="signinTitle">Sign in to APP_NAME</h1>
                 <span class="rule" aria-hidden="true"></span>
                 <p class="signin__lede">Use your VSDA Deep Agent username and password. This is not your Aptiv NetID.</p>
 
