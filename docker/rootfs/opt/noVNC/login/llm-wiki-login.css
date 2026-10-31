@@ -36,8 +36,11 @@
     --font-sans: "Formular", Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     --radius-sm: 0.375rem;
     --radius-md: 0.5rem;
-    --ease: cubic-bezier(0.2, 0, 0, 1);
+    /* Motion: strong ease-out for responses, short durations, faster exits. */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --duration-press: 160ms;
     --duration: 200ms;
+    --duration-enter: 420ms;
 
     color-scheme: light;
 }
@@ -195,8 +198,8 @@ svg {
     z-index: -1;
     opacity: 0.9;
     /* Fade the motif where it sits behind the copy. */
-    -webkit-mask-image: linear-gradient(120deg, transparent 30%, #000 56%);
-    mask-image: linear-gradient(120deg, transparent 30%, #000 56%);
+    -webkit-mask-image: linear-gradient(120deg, transparent 40%, #000 62%);
+    mask-image: linear-gradient(120deg, transparent 40%, #000 62%);
 }
 
 .graph__edges line {
@@ -225,7 +228,7 @@ svg {
 
 @media (prefers-reduced-motion: no-preference) {
     .graph__focus-ring {
-        animation: pulse 3.2s var(--ease) infinite;
+        animation: pulse 3.2s var(--ease-out) infinite;
     }
 
     @keyframes pulse {
@@ -269,6 +272,7 @@ svg {
     font-size: 1rem;
     line-height: 1.6;
     color: rgba(255, 255, 255, 0.72);
+    text-wrap: pretty;
 }
 
 .brand__features {
@@ -390,9 +394,9 @@ svg {
 }
 
 .theme-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    /* Both icons share one grid cell so they can crossfade. */
+    display: inline-grid;
+    place-items: center;
     width: 2.75rem;
     height: 2.75rem;
     padding: 0;
@@ -401,21 +405,31 @@ svg {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     cursor: pointer;
-    transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease), background-color var(--duration) var(--ease);
+    transition:
+        color var(--duration) var(--ease-out),
+        border-color var(--duration) var(--ease-out),
+        transform var(--duration-press) var(--ease-out);
 }
 
-.theme-toggle:hover {
-    color: var(--color-text-primary);
-    border-color: var(--color-border-strong);
+.theme-toggle .icon {
+    grid-area: 1 / 1;
+    transition:
+        opacity var(--duration) var(--ease-out),
+        transform var(--duration) var(--ease-out),
+        filter var(--duration) var(--ease-out);
 }
 
 .theme-toggle .icon--sun,
 :root[data-theme="dark"] .theme-toggle .icon--moon {
-    display: none;
+    opacity: 0;
+    transform: scale(0.6) rotate(-45deg);
+    filter: blur(2px);
 }
 
 :root[data-theme="dark"] .theme-toggle .icon--sun {
-    display: block;
+    opacity: 1;
+    transform: none;
+    filter: none;
 }
 
 .panel__content {
@@ -455,6 +469,7 @@ svg {
     font-size: 0.9375rem;
     line-height: 1.55;
     color: var(--color-text-secondary);
+    text-wrap: pretty;
 }
 
 /* --------------------------------------------------------------- status */
@@ -487,6 +502,19 @@ svg {
     color: var(--color-info);
     background: var(--color-info-bg);
     border-color: var(--color-info-border);
+}
+
+.status {
+    transition:
+        opacity var(--duration) var(--ease-out),
+        transform var(--duration) var(--ease-out);
+}
+
+@starting-style {
+    .status {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
 }
 
 .status--error .status__icon--info,
@@ -537,15 +565,11 @@ svg {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
-    transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+    transition: border-color var(--duration) var(--ease-out), box-shadow var(--duration) var(--ease-out);
 }
 
 .field__input--with-action {
     padding-right: 3rem;
-}
-
-.field__input:hover {
-    border-color: var(--color-border-strong);
 }
 
 .field__input:focus {
@@ -566,6 +590,13 @@ svg {
     margin: 0;
     font-size: 0.8125rem;
     color: var(--color-error);
+    transition: opacity 150ms var(--ease-out);
+}
+
+@starting-style {
+    .field__error {
+        opacity: 0;
+    }
 }
 
 .field__action {
@@ -583,11 +614,9 @@ svg {
     border: 0;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: color var(--duration) var(--ease);
-}
-
-.field__action:hover {
-    color: var(--color-text-primary);
+    transition:
+        color var(--duration) var(--ease-out),
+        transform var(--duration-press) var(--ease-out);
 }
 
 .field__action .icon--eye-off,
@@ -616,20 +645,24 @@ svg {
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: background-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+    transition:
+        background-color var(--duration) var(--ease-out),
+        transform var(--duration-press) var(--ease-out);
 }
 
-.button:hover {
-    background: var(--color-primary-hover);
-}
-
-.button:active {
+.button:active:not(:disabled) {
     background: var(--color-primary-active);
 }
 
 .button:disabled {
     cursor: not-allowed;
     opacity: 0.7;
+}
+
+/* Busy is progress, not a disabled control: keep full strength. */
+.button[aria-busy="true"] {
+    cursor: progress;
+    opacity: 1;
 }
 
 .button__spinner {
@@ -644,7 +677,7 @@ svg {
 
 @media (prefers-reduced-motion: no-preference) {
     .button[aria-busy="true"] .button__spinner {
-        animation: spin 0.8s linear infinite;
+        animation: spin 0.7s linear infinite;
     }
 
     @keyframes spin {
@@ -660,12 +693,7 @@ svg {
     text-decoration: none;
     text-underline-offset: 3px;
     border-radius: 2px;
-    transition: color var(--duration) var(--ease);
-}
-
-.link:hover {
-    color: var(--color-primary-hover);
-    text-decoration: underline;
+    transition: color var(--duration) var(--ease-out);
 }
 
 .link--subtle {
@@ -739,6 +767,10 @@ svg {
 
 /* ---------------------------------------------------------------- footer */
 
+.panel__copyright {
+    font-variant-numeric: tabular-nums;
+}
+
 .panel__footer {
     display: flex;
     flex-wrap: wrap;
@@ -760,12 +792,96 @@ svg {
     }
 }
 
+/* ------------------------------------------------------------ interaction */
+
+/* Hover only where a real pointer can hover; taps would leave it stuck. */
+@media (hover: hover) and (pointer: fine) {
+    .theme-toggle:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-border-strong);
+    }
+
+    .field__input:hover {
+        border-color: var(--color-border-strong);
+    }
+
+    .field__input:focus:hover {
+        border-color: var(--color-primary);
+    }
+
+    .field__input[aria-invalid="true"]:hover {
+        border-color: var(--color-error);
+    }
+
+    .field__action:hover {
+        color: var(--color-text-primary);
+    }
+
+    .button:hover:not(:disabled) {
+        background: var(--color-primary-hover);
+    }
+
+    .button:active:not(:disabled) {
+        background: var(--color-primary-active);
+    }
+
+    .link:hover {
+        color: var(--color-primary-hover);
+        text-decoration: underline;
+    }
+}
+
+/* Theme switch: recolor everything in one frame instead of letting a few
+   transitioned borders lag behind the instant background change. */
+:root[data-theme-switching] *:not(.theme-toggle .icon) {
+    transition: none !important;
+}
+
+/* ---------------------------------------------------------------- motion */
+
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+@keyframes fade {
+    from {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    /* Press feedback: the control confirms it heard the click. */
+    .button:active:not(:disabled),
+    .theme-toggle:active,
+    .field__action:active {
+        transform: scale(0.97);
+    }
+
+    /* First paint: the card and brand copy settle in, staggered. */
+    .signin,
+    .brand__body > * {
+        animation: rise var(--duration-enter) var(--ease-out) both;
+    }
+
+    .brand__body > :nth-child(2) { animation-delay: 50ms; }
+    .brand__body > :nth-child(3) { animation-delay: 100ms; }
+    .brand__body > :nth-child(4) { animation-delay: 150ms; }
+    .signin { animation-delay: 60ms; }
+}
+
+/* Reduced motion: no movement, but keep gentle fades that aid comprehension. */
 @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        transition-duration: 0.01ms !important;
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
+    .signin,
+    .brand__body > * {
+        animation: fade var(--duration) linear both;
+    }
+
+    .status,
+    .theme-toggle .icon {
+        transform: none !important;
+        filter: none !important;
     }
 }

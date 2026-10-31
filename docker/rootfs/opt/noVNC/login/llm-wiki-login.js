@@ -43,6 +43,15 @@
     var themeToggle = $('themeToggle');
 
     function applyTheme(theme) {
+        if (root.dataset.theme && root.dataset.theme !== theme) {
+            // Suppress color transitions for the switch so the page recolors in one frame.
+            root.setAttribute('data-theme-switching', '');
+            window.requestAnimationFrame(function () {
+                window.requestAnimationFrame(function () {
+                    root.removeAttribute('data-theme-switching');
+                });
+            });
+        }
         root.dataset.theme = theme;
         if (themeToggle) {
             themeToggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
@@ -97,6 +106,11 @@
     }
 
     /* ----------------------------------------------------------- form */
+
+    // Same-origin paths only: "//host" and "/\host" are protocol-relative.
+    function safeRedirect(target) {
+        return typeof target === 'string' && /^\/(?![\/\\])/.test(target) ? target : '/';
+    }
 
     var form = $('loginForm');
     var fieldset = $('loginFieldset');
@@ -220,7 +234,7 @@
                 var data = outcome.data || {};
                 if (outcome.response.ok && data.ok) {
                     buttonLabel.textContent = 'Opening LLM Wiki\u2026';
-                    window.location.replace(typeof data.redirect === 'string' && data.redirect.charAt(0) === '/' ? data.redirect : '/');
+                    window.location.replace(safeRedirect(data.redirect));
                     return;
                 }
                 setBusy(false);
