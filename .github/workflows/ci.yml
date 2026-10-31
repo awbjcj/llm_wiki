@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       force_rebuild:
-        description: Rebuild the Docker builder stage without layer cache (Cargo caches are kept)
+        description: Re-run the Docker app build step even if its inputs are unchanged (Cargo caches are kept)
         type: boolean
         default: false
 
@@ -197,4 +197,4 @@ jobs:
           tags: llm-wiki:ci-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          no-cache-filters: ${{ inputs.force_rebuild && 'builder' || '' }}
+          build-args: REBUILD=${{ inputs.force_rebuild && github.run_id || '' }}

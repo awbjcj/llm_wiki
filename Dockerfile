@@ -53,6 +53,8 @@ RUN sha256sum -c src-tauri/pdfium/SHA256SUMS --ignore-missing
 # to get the exact desktop release build. Cargo reads these as env vars.
 ARG CARGO_PROFILE_RELEASE_LTO=thin
 ARG CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+# Any new value re-runs the app build below (keeping the Cargo cache mounts).
+ARG REBUILD=
 
 # tauri build runs beforeBuildCommand (npm run build:desktop): MCP server +
 # typecheck + vite build, then compiles the Rust app and bundles the .deb.
