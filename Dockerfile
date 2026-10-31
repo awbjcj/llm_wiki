@@ -87,7 +87,16 @@ RUN chmod +x /startapp.sh /etc/cont-init.d/*.sh \
     # Control bar: account button next to Logout, opening VSDA Deep Agent.
     && sed -i 's#<a class="btn shadow-none p-0 px-0 noVNC_hidden" href="logout"#<a class="btn shadow-none p-0 px-0 me-2" href="LLM_WIKI_VSDA_APP_URL/" target="_blank" rel="noopener" title="Manage account in VSDA Deep Agent" aria-label="Manage account in VSDA Deep Agent" id="llm_wiki_account_button"><i class="fas fa-user-cog fa-fw"></i></a>&#' \
         /opt/noVNC/index.html \
-    && grep -q 'id="llm_wiki_account_button"' /opt/noVNC/index.html
+    && grep -q 'id="llm_wiki_account_button"' /opt/noVNC/index.html \
+    # Sharp graph edges and text: resize the X display to the browser viewport
+    # (1:1 pixels) instead of downscaling 1920x1080 when the window is smaller,
+    # and stream at the highest JPEG quality. Touch devices still use 'scale'.
+    && sed -i -E \
+        -e 's#window\.inner(Width|Height) < 0\.8 \* UI\.webData\.applicationWindow(Width|Height)#false#' \
+        -e "s#UI\.initSetting\('quality', 6\);#UI.initSetting('quality', 9);#" \
+        /opt/noVNC/app/ui.js \
+    && ! grep -q 'window.innerWidth < 0.8' /opt/noVNC/app/ui.js \
+    && grep -q "UI.initSetting('quality', 9);" /opt/noVNC/app/ui.js
 
 ENV APP_NAME="LLM Wiki" \
     KEEP_APP_RUNNING=1 \
