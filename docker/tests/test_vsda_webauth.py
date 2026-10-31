@@ -368,6 +368,31 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(response.status, 429)
         self.assertEqual(json.loads(data)["error"], "TOO_MANY_ATTEMPTS")
 
+    def test_rate_limited_login_reads_body_before_responding(self):
+        # Answering before the body arrives closes the socket on unread data,
+        # which resets the client's connection instead of delivering the 429.
+        for _ in range(5):
+            self.login(password="nope")
+        body = b"username=alice&password=x"
+        head = (
+            "POST /login HTTP/1.1\r\nHost: localhost\r\nAccept: application/json\r\n"
+            "Content-Type: application/x-www-form-urlencoded\r\n"
+            "X-Forwarded-For: 203.0.113.7, 127.0.0.1\r\nX-Real-IP: 127.0.0.1\r\n"
+            f"Content-Length: {len(body)}\r\n\r\n"
+        ).encode()
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.connect(self.sock_path)
+            sock.sendall(head)
+            sock.settimeout(0.3)
+            with self.assertRaises(socket.timeout):
+                sock.recv(1)
+            sock.settimeout(10)
+            sock.sendall(body)
+            response = http.client.HTTPResponse(sock)
+            response.begin()
+            self.assertEqual(response.status, 429)
+            self.assertEqual(json.loads(response.read())["error"], "TOO_MANY_ATTEMPTS")
+
     def test_vsda_rate_limit_is_reported(self):
         self.vsda.login_status_override = 429
         response, data = self.login()

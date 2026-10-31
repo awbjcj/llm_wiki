@@ -461,6 +461,10 @@ class Handler(BaseHTTPRequestHandler):
                     [self._cookie(LOGIN_RESULT_COOKIE, code, path="/login", max_age=60)],
                 )
 
+        # Read the (size-capped) body first: replying before it arrives closes
+        # the socket on unread data and resets the client's connection.
+        form = self._read_form()
+
         if not self.service.limiter.allow(ip):
             LOG.warning("login throttled ip=%s", ip)
             fail(
@@ -470,7 +474,6 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        form = self._read_form()
         username = (form.get("username") or "").strip()
         password = form.get("password") or ""
         if (
